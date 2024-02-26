@@ -1,7 +1,16 @@
 # -*- coding: UTF-8 -*-
 import zipfile
-import telegram
-from telegram.ext import Updater,CommandHandler,MessageHandler#Filters,BaseFilter
+import asyncio
+from telegram import Bot, Update
+from telegram.ext import Application
+from http import HTTPStatus
+
+import uvicorn
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse, Response
+from starlette.routing import Route
+
 import requests
 import logging
 import os
@@ -12,6 +21,12 @@ from dotenv import load_dotenv
 
 currencies = []
 crypto={}
+
+class WebhookUpdate:
+    """Simple dataclass to wrap a custom update type"""
+
+    user_id: int
+    payload: str
 
 def load_currencies():
     global currencies 
@@ -35,36 +50,36 @@ def load_setting():
         setting= json.load(f)
 
 
-class FilterUUNS(BaseFilter):
-    def filter(self,message):
-        if 'uu' in message.text.lower() and 'ns' in message.text.lower():
-            return True
-        elif '26' in message.text.lower() and 'ns' in message.text.lower():
-            return True
-        else:
-            return False
-class Filterlinch(BaseFilter):
-    def filter(self,message):
-        if 'linch' in message.text.lower() :
-            return True
-        else:
-            return False
+# class FilterUUNS(BaseFilter):
+#     def filter(self,message):
+#         if 'uu' in message.text.lower() and 'ns' in message.text.lower():
+#             return True
+#         elif '26' in message.text.lower() and 'ns' in message.text.lower():
+#             return True
+#         else:
+#             return False
+# class Filterlinch(BaseFilter):
+#     def filter(self,message):
+#         if 'linch' in message.text.lower() :
+#             return True
+#         else:
+#             return False
 
-class FilterCurrency(BaseFilter):
-    def filter(self,message):
-        text = message.text
-        if text.strip().startswith('/q'):
-            result= re.search('/q\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
-        else :
-            result= re.search('\$\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
+# class FilterCurrency(BaseFilter):
+#     def filter(self,message):
+#         text = message.text
+#         if text.strip().startswith('/q'):
+#             result= re.search('/q\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
+#         else :
+#             result= re.search('\$\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
 
-        if result is None:
-            return False
-        else:
-            if result.group(2).upper() in [i[0] for i in currencies]:
-                return True
-            else:
-                return False
+#         if result is None:
+#             return False
+#         else:
+#             if result.group(2).upper() in [i[0] for i in currencies]:
+#                 return True
+#             else:
+#                 return False
 
 def convertCurrencies(update,context):
     text = context.message.text
@@ -304,44 +319,110 @@ def sticker(bot,update):
     os.remove(zip_filename)
 
 
-def main():
+async def main():
     load_dotenv()
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    bot_name = os.environ['BOT_NAME']
-    updater = Updater(token=os.environ['TOKEN'])
+#     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#     bot_name = os.environ['BOT_NAME']
+#     updater = Updater(token=os.environ['TOKEN'])
 
-    load_currencies()
-    load_crypto()
-    load_setting()
+#     load_currencies()
+#     load_crypto()
+#     load_setting()
 
-    #Add Commands
-    dp = updater.dispatcher
-#    dp.add_handler(CommandHandler("price",eth_defender))#Fake eth price
-    dp.add_handler(CommandHandler("price",eth_price))
-#    dp.add_handler(CommandHandler("QAQ",thesis))
-    dp.add_handler(CommandHandler("OuO",OuO_price))
-    dp.add_handler(CommandHandler("Rist",Rist_price))
-    dp.add_handler(CommandHandler("Eathon",Eathon_price))
-    dp.add_handler(CommandHandler("leverage",setup_leverage))
-    dp.add_handler(CommandHandler("crypto",crypto_exchange))
-    dp.add_handler(CommandHandler("cur",commonCurrencies))
-    dp.add_handler(CommandHandler("ftx",lambda update,context : context.message.reply_text('6rLrWAL2g8G6jDvDmp2wZcs36My5VUD5PGUKVn5xHuC3')))
-#    dp.add_handler(MessageHandler(Filters.sticker,sticker))
-#    filter_uuns = FilterUUNS()
-#    dp.add_handler(MessageHandler(Filters.text & filter_uuns,UUNS))
-    filter_linch= Filterlinch()
-    dp.add_handler(MessageHandler(Filters.text & filter_linch,linch)) 
+#     #Add Commands
+#     dp = updater.dispatcher
+# #    dp.add_handler(CommandHandler("price",eth_defender))#Fake eth price
+#     dp.add_handler(CommandHandler("price",eth_price))
+# #    dp.add_handler(CommandHandler("QAQ",thesis))
+#     dp.add_handler(CommandHandler("OuO",OuO_price))
+#     dp.add_handler(CommandHandler("Rist",Rist_price))
+#     dp.add_handler(CommandHandler("Eathon",Eathon_price))
+#     dp.add_handler(CommandHandler("leverage",setup_leverage))
+#     dp.add_handler(CommandHandler("crypto",crypto_exchange))
+#     dp.add_handler(CommandHandler("cur",commonCurrencies))
+#     dp.add_handler(CommandHandler("ftx",lambda update,context : context.message.reply_text('6rLrWAL2g8G6jDvDmp2wZcs36My5VUD5PGUKVn5xHuC3')))
+# #    dp.add_handler(MessageHandler(Filters.sticker,sticker))
+# #    filter_uuns = FilterUUNS()
+# #    dp.add_handler(MessageHandler(Filters.text & filter_uuns,UUNS))
+#     filter_linch= Filterlinch()
+#     dp.add_handler(MessageHandler(Filters.text & filter_linch,linch)) 
 
-    dp.add_handler(CommandHandler("show_currencies",show_currencies))
-    filter_currencies = FilterCurrency()
-    dp.add_handler(MessageHandler(Filters.text & filter_currencies,convertCurrencies))
+#     dp.add_handler(CommandHandler("show_currencies",show_currencies))
+#     filter_currencies = FilterCurrency()
+#     dp.add_handler(MessageHandler(Filters.text & filter_currencies,convertCurrencies))
 
     
-    #Start Webhook
-    url_path = ''.join(os.environ['URL'].strip('https://').split('/')[1:])
-    updater.start_webhook(listen=os.environ('IP'),port=int(os.environ['PORT']),url_path=url_path)
-    updater.bot.set_webhook(url=os.environ['URL'], 
-                         certificate=open(os.environ['CERT_FILE_PATH'],'rb'))
+#     #Start Webhook
+#     url_path = ''.join(os.environ['URL'].strip('https://').split('/')[1:])
+#     updater.start_webhook(listen=os.environ('IP'),port=int(os.environ['PORT']),url_path=url_path)
+#     updater.bot.set_webhook(url=os.environ['URL'], 
+#                          certificate=open(os.environ['CERT_FILE_PATH'],'rb'))
+
+    env = os.environ
+    app = Application.builder().token(env['TOKEN']).build()
+    await app.bot.set_webhook(url=env['URL'], allowed_updates=Update.ALL_TYPES)
+    # Set up webserver
+    async def handler(request: Request) -> Response:
+        """Handle incoming Telegram updates by putting them into the `update_queue`"""
+        # logging.debug(await request.json())
+        print("<< ", await request.json())
+        await app.update_queue.put(
+            Update.de_json(data=await request.json(), bot=app.bot)
+        )
+        return Response()
+
+    async def custom_updates(request: Request) -> PlainTextResponse:
+        """
+        Handle incoming webhook updates by also putting them into the `update_queue` if
+        the required parameters were passed correctly.
+        """
+        try:
+            user_id = int(request.query_params["user_id"])
+            payload = request.query_params["payload"]
+        except KeyError:
+            return PlainTextResponse(
+                status_code=HTTPStatus.BAD_REQUEST,
+                content="Please pass both `user_id` and `payload` as query parameters.",
+            )
+        except ValueError:
+            return PlainTextResponse(
+                status_code=HTTPStatus.BAD_REQUEST,
+                content="The `user_id` must be a string!",
+            )
+
+        await app.update_queue.put(WebhookUpdate(user_id=user_id, payload=payload))
+        return PlainTextResponse("Thank you for the submission! It's being forwarded.")
+
+    async def health(_: Request) -> PlainTextResponse:
+        """For the health endpoint, reply with a simple plain text message."""
+        return PlainTextResponse(content="The bot is still running fine :)")
+
+    route = '/'+''.join(os.environ['URL'].strip('https://').split('/')[1:])
+    starlette_app = Starlette(
+        routes=[
+            Route(route, handler, methods=["POST"]),
+            Route("/healthcheck", health, methods=["GET"]),
+            Route("/submitpayload", custom_updates, methods=["POST", "GET"]),
+        ]
+    )
+    webserver = uvicorn.Server(
+        config=uvicorn.Config(
+            app=starlette_app,
+            port=int(env['PORT']),
+            use_colors=False,
+            host=env['IP'],
+        )
+    )
+
+    # Run application and webserver together
+    async with app:
+        await app.start()
+        await webserver.serve()
+        await app.stop()
+
+    # updater = Application(bot=bot)
+    # updater.run_webhook(listen=env['IP'], port=int(env['PORT']),secret_token=env['TOKEN'],key=env['CERT_KEY'], cert = env['CERT_PEM'],webhook_url=env['URL'])
 
 if __name__ == "__main__":
-    main()
+    # logging.basicConfig(filename='tianai.log',encoding='utf-8',level=logging.DEBUG)
+    asyncio.run(main())
