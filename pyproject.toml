@@ -13,6 +13,7 @@ requests = "^2.31.0"
 asyncio = "^3.4.3"
 starlette = "^0.37.1"
 uvicorn = "^0.27.1"
+binance-futures-connector = "^4.0.0"
 
 
 [build-system]

@@ -1,11 +1,12 @@
 # -*- coding: UTF-8 -*-
 import zipfile
 import asyncio
-from telegram import Bot, Update
+from telegram import Bot, Update 
+from telegram.constants import ChatType
 from telegram.ext import Application,CommandHandler
 from http import HTTPStatus
 from typing import Optional
-
+from binance.um_futures import UMFutures
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -25,6 +26,7 @@ import urllib
 currencies = []
 crypto={}
 bnb_symbol = set()
+b_client = None 
 logger = logging.getLogger(__name__)
 
 class WebhookUpdate:
@@ -52,10 +54,27 @@ def load_setting():
     global setting 
     with open('setting.json','r') as f:
         setting= json.load(f)
+async def check_binance_USDM_position(update:Update, context):
+    logger.debug("FROM: ", update.message.from_user)
+    replied = ""
+    if update.message.from_user.username == 'www10177':
+        holdings = [pos for pos in b_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
+        for pos in holdings:
+            value = float(pos['unRealizedProfit'])
+            value_mark= '🟢' if value> 0 else "🔴"
+            to_str = lambda x : f"{float(x):.2f}"
+            replied  += f"{value_mark}[{pos['symbol']}@{to_str(pos['positionAmt'])}]: ${value:.2f}\n"
+            replied += f"{value_mark}Now:{to_str(pos['markPrice'])}, Liq:{to_str(pos['liquidationPrice'])}\n"
+            replied += '-----\n'
+    else :
+        replied += "Private Command.\nPlease Contact @www10177 for more info. "
+    logger.debug(replied)
+    await update.message.reply_text(replied)
 
 def init() : 
-    global bnb_symbol
+    global bnb_symbol,b_client
     bnb_symbol.update(get_all_binance_symbol())
+    b_client = UMFutures(key = os.environ['BNB_KEY'], secret=os.environ['BNB_SECRET'])
 
 def get_all_binance_symbol()->list[str]:
     result=  requests.get("https://api.binance.com/api/v3/exchangeInfo").json()
@@ -105,15 +124,16 @@ async def WIF(update:Update,context)->None:
             #    f"{last_rate:.2f}  "#🔜{next_rate:.2f} ,{rate_mark}{rate_diff:+.2f}  "
     )
     await update.message.reply_text(replied)
+async def call_online(update:Update,context)->None:
+    logger.debug("+"*20)
+    print(update.effective_chat.type == ChatType.SUPERGROUP )
+    logger.debug("+"*20)
+    pass
     
     
     
 
 
-def show_currencies(update,context):
-    back = 'Usage: $xxx(USD|JPY.....)\n'
-    for i in currencies:
-        back += '{0[0]} : {0[1]} \n'.format(i)
 
 async def main():
     load_dotenv()
@@ -123,6 +143,8 @@ async def main():
     app = Application.builder().token(env['TOKEN']).build()
     app.add_handler(CommandHandler("price",get_crypto_wishlist))
     app.add_handler(CommandHandler("WIF",WIF))
+    app.add_handler(CommandHandler("up",call_online))
+    app.add_handler(CommandHandler("position",check_binance_USDM_position))
     #app.add_handler(CommandHandler("crypto",crypto_exchange))
     # app.add_handler(CommandHandler("OuO",OuO_price))
     # app.add_handler(CommandHandler("cur",commonCurrencies))
