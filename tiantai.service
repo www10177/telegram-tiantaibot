@@ -1,0 +1,21 @@
+[Unit]
+Description=Tiantai
+After=network.target
+
+[Service]
+Type=simple
+User=www10177
+Group=www10177
+
+WorkingDirectory=/srv/tiantai-bot/
+PrivateTmp=true
+
+EnvironmentFile=/srv/tiantai-bot/.env
+
+ExecStart=/srv/tiantai-bot/.venv/bin/python3 /srv/tiantai-bot/app.py
+ExecReload=/bin/kill -HUP ${MAINPID}
+RestartSec=1
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
