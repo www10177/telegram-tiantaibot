@@ -4,6 +4,7 @@ import asyncio
 from telegram import Bot, Update
 from telegram.ext import Application,CommandHandler
 from http import HTTPStatus
+from typing import Optional
 
 import uvicorn
 from starlette.applications import Starlette
@@ -19,9 +20,11 @@ from datetime import datetime,date,timezone,timedelta
 import re
 import json
 from dotenv import load_dotenv
+import urllib
 
 currencies = []
 crypto={}
+bnb_symbol = set()
 logger = logging.getLogger(__name__)
 
 class WebhookUpdate:
@@ -50,188 +53,62 @@ def load_setting():
     with open('setting.json','r') as f:
         setting= json.load(f)
 
+def init() : 
+    global bnb_symbol
+    bnb_symbol.update(get_all_binance_symbol())
 
-# class FilterUUNS(BaseFilter):
-#     def filter(self,message):
-#         if 'uu' in message.text.lower() and 'ns' in message.text.lower():
-#             return True
-#         elif '26' in message.text.lower() and 'ns' in message.text.lower():
-#             return True
-#         else:
-#             return False
-# class Filterlinch(BaseFilter):
-#     def filter(self,message):
-#         if 'linch' in message.text.lower() :
-#             return True
-#         else:
-#             return False
-
-# class FilterCurrency(BaseFilter):
-#     def filter(self,message):
-#         text = message.text
-#         if text.strip().startswith('/q'):
-#             result= re.search('/q\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
-#         else :
-#             result= re.search('\$\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
-
-#         if result is None:
-#             return False
-#         else:
-#             if result.group(2).upper() in [i[0] for i in currencies]:
-#                 return True
-#             else:
-#                 return False
-
-async def convertCurrencies(context, update):
-    text = context.message.text
-
-    if text.strip().startswith('/q'):
-        result= re.search('/q\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
-    else :
-        result= re.search('\$\s*(\d+[\d.]*)\s*([a-zA-z]{3})',text) # serach for currency string
-    currency = (result.group(2)).lower()
-    url = f"https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/{currency}.json"
-    logger.debug(url)
-    logger.debug(url)
-    json = requests.get(url).json()
-    ori_price = float(result.group(1))
-    converted_price = float(json[currency]['twd']) *ori_price 
-
-    back = '${:.2f} {}= ${:.2f} TWD'.format(ori_price,result.group(2).upper(),converted_price)
-    print(back)
-    await context.message.reply_text(back)
-
-
-async def commonCurrencies(context,update):
-    text = context.message.text
-    currencies = ['usd','jpy','cny','try']
-
-    url = f"https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/twd.json"
-    json = requests.get(url).json()
-    back = ''
-    for currency in currencies:
-        price = 1/json['twd'][currency]
-        back += f'$1{currency.upper()} = {price:.2f}TWD\n'
-    await context.message.reply_text(back)
-
-def echo(upddte,context):
-    context.message.reply_text('Hello World!!')
-
-def eth_price(update,context):
-    ticket = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=twd%2Cusd%2Ccny&include_24hr_change=true')
-    json = ticket.json()
-    price_list=json['ethereum']
-    back = u'  ETH價格 : \n  ${twd}TWD\n= ${usd}USD\n= ${cny}RMB\n24hr_change_rate : {usd_24h_change:+.2f}%'.format(**price_list)
-    print(back)
-    context.message.reply_text(back)
-
-
-async def check_price(update:Update,context,user):
-    cryptos={
-        'ethereum':'ETH',
-        'bitcoin':'BTC',
-        'solana':'SOL',
-        'binancecoin':'BNB',
-        # 'smooth-love-potion':'SLP',
-        # 'samoyedcoin':'SAMO',
-        # 'msol':'MSOL',
-        #'marinade':'MNDE',
-        #'shoebill-coin':'SHBL',
-        #'larix':'LARIX',
-        # 'crypto-com-chain':'CRO',
-        #'cryptomines-eternal':'ETL',
-        # 'raydium':'RAY',
-        # 'iota':'MIOTA',
-        # 'bonfida':'FIDA',
-        # 'cardano':'ADA',
-        #'babyswap' : 'BABY',
-        # 'axie-infinity':'AXS',
-        # 'tezos':"XTZ",
-
+def get_all_binance_symbol()->list[str]:
+    result=  requests.get("https://api.binance.com/api/v3/exchangeInfo").json()
+    return [symbol['symbol'] for symbol in result['symbols']]
         
-        # 'orca':'ORCA',
-        # 'uniswap':'UNI',
-             }
-    url='https://api.coingecko.com/api/v3/simple/price?vs_currencies=usd&include_24hr_change=true&ids='
-    url += ','.join([i for i,_ in cryptos.items()])
-    ticket = requests.get(url)
-    json = ticket.json()
-    back = ''
-    result = []
-    print(url)
-    print(json)
-    # sol = json['solana']['usd']
-    for name, data in json.items():
-        print(name,data)
-        result.append([cryptos[name],data['usd'],data['usd_24h_change']])
-    result.sort(reverse=True,key=lambda x: x[-1])
-    for r in result:
-        back += u'{}: `${}`, {:+.2f}%\n'.format(*r)
 
-    # back += '='*10+'\n'
-    # msol = json['msol']['usd']
-    # eth= json['ethereum']['usd']
-    # msol_supply = setting[user]['msol_supply']
-    # weth_supply = setting[user]['weth_supply']
-    # borrow= setting[user]['usd_borrow']
-    # back += f"MSOL : {msol_supply}=${msol_supply*msol:.2f}, ETH : {weth_supply}=${eth*weth_supply:.2f}\nUSD : -{borrow}\n"
-    # borrow_limit= 0.7*msol_supply*msol+0.8*weth_supply*eth
-    # borrow_rate = borrow/borrow_limit
-    # back += f"borrow rate = {100*borrow_rate:3.2f}%, borrow_limit: {borrow_limit}\n"
-    await update.message.reply_markdown(back)
+async def bnb_spot_quote(queries:list[str],base:str) -> dict[str, tuple[float]]:
+    global bnb_symbol
+    pairs = [q+base if q+base in bnb_symbol else None for q in queries ]
+    query_string = ",".join(['"'+ pair + '"' for pair in pairs if pair is not None])
+    query_string = urllib.parse.quote(query_string)
+    logger.debug(f"https://api.binance.com/api/v3/ticker/24hr?symbols=[{query_string}]")
+    r= await asyncio.to_thread(requests.get, f"https://api.binance.com/api/v3/ticker/24hr?symbols=[{query_string}]")
+    r = r.json()
+    logger.debug(r)
+    get = lambda item: (float(item['lastPrice']), float(item['priceChangePercent']))
+    return {item['symbol']: get(item) for item in r}
 
-async def Rist_price(update,context):
-    await check_price(update,context,'rist')
+async def get_crypto_wishlist(update:Update,context)->None:
+    # Hard encoded wishlist now
+    logger.debug("ENTERED get_crypto_wishlist")
+    wishlist = ['BTC','ETH','SOL','NEAR','BNB']
+    baseSymbol = "USDT"
+    result = await bnb_spot_quote(wishlist,baseSymbol)
+    replied = ""
+    for symbol, (price,percent) in result.items():
+        percent_mark= '🟢' if percent> 0 else "🔴"
+        replied += f"{percent_mark}{symbol.replace(baseSymbol,'')}: *`{price:.1f}`*U, *`{percent:+.1f}`*%\n" 
+    logger.debug(replied)
+    await update.message.reply_markdown_v2(replied)
+    
+async def WIF(update:Update,context)->None:
+    r= await asyncio.to_thread(requests.get, f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol=WIFUSDT")
+    binance= r.json()
+    b_price, last_rate, next_rate = float(binance["markPrice"]), float(binance['lastFundingRate']), float(binance['nextFundingTime'])
+    
+    r= await asyncio.to_thread(requests.get, f"https://price.jup.ag/v4/price?ids=EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm&vsToken=USDT")
+    j_price= r.json()['data']['EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm']['price']
+    rate_diff = next_rate - last_rate
+    price_diff = (j_price - b_price ) / b_price
+    diff_mark= '🟢' if price_diff> 0 else "🔴"
+    holdings = 806
+    replied = (f"Binance : {b_price:.4f}\n"
+               f"Jupiter :  {j_price:.4f}\n"
+               f"{diff_mark}PriceDiff: {100*price_diff:+.2f}%, Funding:{100*last_rate:.4f}%\n"
+               f"⚡${holdings*b_price*last_rate:.3f}⚡"
+            #    f"{last_rate:.2f}  "#🔜{next_rate:.2f} ,{rate_mark}{rate_diff:+.2f}  "
+    )
+    await update.message.reply_text(replied)
+    
+    
+    
 
-def Eathon_price(update,context):
-    check_price(update,context,'eathon')
-
-# async def OuO_price(context,update):
-#     url='https://api.coingecko.com/api/v3/simple/price?vs_currencies=usd%2Ceth&include_24hr_change=true&ids='
-#     cryptos={
-#         'bitcoin':'BTC',
-#         'ethereum':'ETH',
-#         'solana':'SOL',
-#         'smooth-love-potion':'SLP',
-#         'axie-infinity':'AXS',
-#         'uniswap':'UNI',
-#         # 'step-finance':'STEP',
-#         # 'binancecoin':'BNB',
-#              }
-
-#     url += ','.join([i for i,_ in cryptos.items()])
-#     ticket = requests.get(url)
-#     json = ticket.json()
-#     back = ''
-#     result = []
-#     print(url)
-#     print(json)
-#     for name, data in json.items():
-#         print(name,data)
-#         result.append([cryptos[name],data['usd'],data['eth'],data['usd_24h_change']])
-#     result.sort(reverse=True,key=lambda x: x[-1])
-#     # print(result)
-#     for r in result:
-#         back += u'{} : ${}USD={:.6f}eth, {:+.2f}%\n'.format(*r)
-#     print(back)
-#     await context.message.reply_text(back)
-
-async def crypto_exchange(update:Update,context)->None:
-    coin = update.message.text.split(' ')[-1]
-    coin = coin.lower()
-    logger.debug(crypto)
-    if coin not in crypto:
-        await update.message.reply_text('Not Found\nFull Raw List :https://api.coingecko.com/api/v3/coins/list')
-        return
-    coin = crypto[coin]
-    logger.debug(coin)
-    ticket = requests.get('https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=twd%2Cusd%2Ccny&include_24hr_change=true'.format(coin))
-    json = ticket.json()
-    price_list=json[coin]
-    print(price_list)
-    back = '   {} Price : \n'.format(coin)+u'${twd}TWD\n= ${usd}USD\n= ${cny}RMB\n24hr_change_rate : {usd_24h_change:+.2f}%'.format(**price_list)
-    print(back)
-    await update.message.reply_text(back)
 
 def show_currencies(update,context):
     back = 'Usage: $xxx(USD|JPY.....)\n'
@@ -240,31 +117,15 @@ def show_currencies(update,context):
 
 async def main():
     load_dotenv()
-#     bot_name = os.environ['BOT_NAME']
-#     updater = Updater(token=os.environ['TOKEN'])
-
-
-#     #Add Commands
-#     dp = updater.dispatcher
-# #    dp.add_handler(CommandHandler("price",eth_defender))#Fake eth price
-#     dp.add_handler(CommandHandler("price",eth_price))
-# #    dp.add_handler(CommandHandler("QAQ",thesis))
-#     dp.add_handler(CommandHandler("OuO",OuO_price))
-#     dp.add_handler(CommandHandler("Rist",Rist_price))
-#     dp.add_handler(CommandHandler("Eathon",Eathon_price))
-#     dp.add_handler(CommandHandler("leverage",setup_leverage))
-
-#     dp.add_handler(CommandHandler("show_currencies",show_currencies))
-#     filter_currencies = FilterCurrency()
-#     dp.add_handler(MessageHandler(Filters.text & filter_currencies,convertCurrencies))
 
     env = os.environ
     # logger.debug(env)
     app = Application.builder().token(env['TOKEN']).build()
+    app.add_handler(CommandHandler("price",get_crypto_wishlist))
+    app.add_handler(CommandHandler("WIF",WIF))
     #app.add_handler(CommandHandler("crypto",crypto_exchange))
-    app.add_handler(CommandHandler("crypto",Rist_price))
     # app.add_handler(CommandHandler("OuO",OuO_price))
-    app.add_handler(CommandHandler("cur",commonCurrencies))
+    # app.add_handler(CommandHandler("cur",commonCurrencies))
     
 
     await app.bot.set_webhook(url=env['URL'], allowed_updates=Update.ALL_TYPES)
@@ -345,6 +206,7 @@ def setup_logger():
 
 if __name__ == "__main__":
     # logging.basicConfig(filename='tianai.log',encoding='utf-8',level=logging.DEBUG)
+    init()
     load_currencies()
     load_crypto()
     load_setting()
