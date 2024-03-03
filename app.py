@@ -1,4 +1,5 @@
 # -*- coding: UTF-8 -*-
+import time
 import zipfile
 import asyncio
 from telegram import Bot, Update 
@@ -59,13 +60,20 @@ async def check_binance_USDM_position(update:Update, context):
     replied = ""
     if update.message.from_user.username == 'www10177':
         holdings = [pos for pos in b_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
+        startTime= 1000*(int(time.time()) - 3600*24)#yesterday in milli epoch time
+        income = b_client.get_income_history(startTime=startTime)
         for pos in holdings:
+            symbol = pos['symbol']
             value = float(pos['unRealizedProfit'])
             value_mark= '🟢' if value> 0 else "🔴"
             to_str = lambda x : f"{float(x):.2f}"
             replied  += f"{value_mark}[{pos['symbol']}@{to_str(pos['positionAmt'])}]: ${value:.2f}\n"
             replied += f"{value_mark}Now:{to_str(pos['markPrice'])}, Liq:{to_str(pos['liquidationPrice'])}\n"
-            replied += '-----\n'
+            for row in income :
+                if row['symbol'] == symbol:
+                    replied += time.strftime("%H:%M", time.localtime(row['time']/1000)) # ms to second
+                    replied += f"[{row['incomeType'][:4]}]: {row['income']} {row['asset']}\n"
+            replied += '-----\n' 
     else :
         replied += "Private Command.\nPlease Contact @www10177 for more info. "
     logger.debug(replied)
@@ -126,7 +134,11 @@ async def WIF(update:Update,context)->None:
     await update.message.reply_text(replied)
 async def call_online(update:Update,context)->None:
     logger.debug("+"*20)
-    print(update.effective_chat.type == ChatType.SUPERGROUP )
+    if update.effective_chat.type != ChatType.SUPERGROUP :
+        update.message.reply_text("Please add bot into group and elevate it as admin.")
+    else :
+        print(update.chat_member)
+        
     logger.debug("+"*20)
     pass
     
@@ -143,7 +155,7 @@ async def main():
     app = Application.builder().token(env['TOKEN']).build()
     app.add_handler(CommandHandler("price",get_crypto_wishlist))
     app.add_handler(CommandHandler("WIF",WIF))
-    app.add_handler(CommandHandler("up",call_online))
+    # app.add_handler(CommandHandler("up",call_online))
     app.add_handler(CommandHandler("position",check_binance_USDM_position))
     #app.add_handler(CommandHandler("crypto",crypto_exchange))
     # app.add_handler(CommandHandler("OuO",OuO_price))
