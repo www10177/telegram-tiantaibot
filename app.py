@@ -83,7 +83,7 @@ async def check_binance_USDM_position(update:Update, context):
     if update.message.from_user.username == 'www10177':
         holdings = [pos for pos in bnb_um_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
         startTime= 1000*(int(time.time()) - 3600*24)#yesterday in milli epoch time
-        income = bnb_um_client.get_income_history(startTime=startTime)
+        income = bnb_um_client.get_income_history(startTime=startTime,limit=300)
         for pos in holdings:
             symbol = pos['symbol']
             value = float(pos['unRealizedProfit'])
@@ -95,10 +95,14 @@ async def check_binance_USDM_position(update:Update, context):
             replied += f"{value_mark}Now:{to_str(pos['markPrice'])}, Liq:{to_str(pos['liquidationPrice'])}\n"
             rate_mark= '🟢' if fundRate> 0 else "🔴"
             replied  += f"{rate_mark}Fund:{100*fundRate:.4f}% "+f"⚡${abs(float(pos['positionAmt']))*float(pos['markPrice'])*fundRate:.3f}⚡\n"
+            price_sum = 0
             for row in income :
-                if row['symbol'] == symbol:
+                if row['symbol'] == symbol and row['incomeType'][:4] != 'COMM':
                     replied += time.strftime("%H:%M", time.localtime(row['time']/1000)) # ms to second
                     replied += f"[{row['incomeType'][:4]}]: {row['income']} {row['asset']}\n"
+                    price_sum += float(row['income'])
+            replied += f'Summation : {price_sum:.2f}\n'
+                
             replied += '-----\n' 
     else :
         replied += "Private Command.\nPlease Contact @www10177 for more info. "
@@ -112,9 +116,7 @@ async def margin(update:Update, context):
             replied = f"Level:{float(data['marginLevel']):.2f}\n"
             assets = [item['asset'] for item in data['userAssets'] if item['borrowed'] != '0' ]
             rates = bnb_spot_client.get_a_future_hourly_interest_rate(assets=','.join(assets),isIsolated=False)
-            print(rates)
             rates ={item['asset'] : float(item['nextHourlyInterestRate']) for item in rates}
-            print(rates)
             for item in data['userAssets']:
                 if item['borrowed'] != '0' :
                     replied += f"{item['asset']} : {item['borrowed']}/ 4hour rate: {100*4*rates[item['asset']]:.4f}% \n" 
