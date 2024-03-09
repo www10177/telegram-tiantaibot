@@ -2,12 +2,13 @@
 import time
 import zipfile
 import asyncio
-from telegram import Bot, Update 
+from telegram import Bot, Update, ReplyKeyboardMarkup,ReplyKeyboardRemove
 from telegram.constants import ChatType
 from telegram.ext import Application,CommandHandler
 from http import HTTPStatus
 from typing import Optional
 from binance.um_futures import UMFutures
+from binance.spot import Spot
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -27,7 +28,8 @@ import urllib
 currencies = []
 crypto={}
 bnb_symbol = set()
-b_client = None 
+bnb_um_client = None 
+bnb_spot_client = None 
 logger = logging.getLogger(__name__)
 
 class WebhookUpdate:
@@ -55,20 +57,44 @@ def load_setting():
     global setting 
     with open('setting.json','r') as f:
         setting= json.load(f)
+ 
+#Deprecated       
+# async def WIF(update:Update,context)->None:
+#     r= await asyncio.to_thread(requests.get, f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol=WIFUSDT")
+#     binance= r.json()
+#     b_price, last_rate, next_rate = float(binance["markPrice"]), float(binance['lastFundingRate']), float(binance['nextFundingTime'])
+    
+#     r= await asyncio.to_thread(requests.get, f"https://price.jup.ag/v4/price?ids=EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm&vsToken=USDT")
+#     j_price= r.json()['data']['EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm']['price']
+#     rate_diff = next_rate - last_rate
+#     price_diff = (j_price - b_price ) / b_price
+#     diff_mark= '🟢' if price_diff> 0 else "🔴"
+#     holdings = 806
+#     replied = (f"Binance : {b_price:.4f}\n"
+#                f"Jupiter :  {j_price:.4f}\n"
+#                f"{diff_mark}PriceDiff: {100*price_diff:+.2f}%, Funding:{100*last_rate:.4f}%\n"
+#                f"⚡${holdings*b_price*last_rate:.3f}⚡"
+#             #    f"{last_rate:.2f}  "#🔜{next_rate:.2f} ,{rate_mark}{rate_diff:+.2f}  "
+#     )
+#     await update.message.reply_text(replied)
+
 async def check_binance_USDM_position(update:Update, context):
-    logger.debug("FROM: ", update.message.from_user)
     replied = ""
     if update.message.from_user.username == 'www10177':
-        holdings = [pos for pos in b_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
+        holdings = [pos for pos in bnb_um_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
         startTime= 1000*(int(time.time()) - 3600*24)#yesterday in milli epoch time
-        income = b_client.get_income_history(startTime=startTime)
+        income = bnb_um_client.get_income_history(startTime=startTime)
         for pos in holdings:
             symbol = pos['symbol']
             value = float(pos['unRealizedProfit'])
+            r= await asyncio.to_thread(requests.get, f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={symbol}")
+            fundRate = float(r.json()['lastFundingRate'])
             value_mark= '🟢' if value> 0 else "🔴"
             to_str = lambda x : f"{float(x):.2f}"
             replied  += f"{value_mark}[{pos['symbol']}@{to_str(pos['positionAmt'])}]: ${value:.2f}\n"
             replied += f"{value_mark}Now:{to_str(pos['markPrice'])}, Liq:{to_str(pos['liquidationPrice'])}\n"
+            rate_mark= '🟢' if fundRate> 0 else "🔴"
+            replied  += f"{rate_mark}Fund:{100*fundRate:.4f}% "+f"⚡${abs(float(pos['positionAmt']))*float(pos['markPrice'])*fundRate:.3f}⚡\n"
             for row in income :
                 if row['symbol'] == symbol:
                     replied += time.strftime("%H:%M", time.localtime(row['time']/1000)) # ms to second
@@ -78,11 +104,46 @@ async def check_binance_USDM_position(update:Update, context):
         replied += "Private Command.\nPlease Contact @www10177 for more info. "
     logger.debug(replied)
     await update.message.reply_text(replied)
+    
+async def margin(update:Update, context):
+    replied = ""
+    if update.message.from_user.username == 'www10177':
+            data = bnb_spot_client.margin_account()
+            replied = f"Level:{float(data['marginLevel']):.2f}\n"
+            for item in data['userAssets']:
+                if item['borrowed'] != '0' | item['interest'] != '0':
+                    replied += str(item) + '\n'
+            print(replied)
+
+        # holdings = [pos for pos in bnb_um_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
+        # startTime= 1000*(int(time.time()) - 3600*24)#yesterday in milli epoch time
+        # income = bnb_um_client.get_income_history(startTime=startTime)
+        # for pos in holdings:
+        #     symbol = pos['symbol']
+        #     value = float(pos['unRealizedProfit'])
+        #     r= await asyncio.to_thread(requests.get, f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={symbol}")
+        #     fundRate = float(r.json()['lastFundingRate'])
+        #     value_mark= '🟢' if value> 0 else "🔴"
+        #     to_str = lambda x : f"{float(x):.2f}"
+        #     replied  += f"{value_mark}[{pos['symbol']}@{to_str(pos['positionAmt'])}]: ${value:.2f}\n"
+        #     replied += f"{value_mark}Now:{to_str(pos['markPrice'])}, Liq:{to_str(pos['liquidationPrice'])}\n"
+        #     rate_mark= '🟢' if fundRate> 0 else "🔴"
+        #     replied  += f"{rate_mark}Fund:{100*fundRate:.4f}% "+f"⚡${abs(float(pos['positionAmt']))*float(pos['markPrice'])*fundRate:.3f}⚡\n"
+        #     for row in income :
+        #         if row['symbol'] == symbol:
+        #             replied += time.strftime("%H:%M", time.localtime(row['time']/1000)) # ms to second
+        #             replied += f"[{row['incomeType'][:4]}]: {row['income']} {row['asset']}\n"
+            replied += '-----\n' 
+    else :
+        replied += "Private Command.\nPlease Contact @www10177 for more info. "
+    logger.debug(replied)
+    await update.message.reply_text(replied)
 
 def init() : 
-    global bnb_symbol,b_client
+    global bnb_symbol,bnb_um_client,bnb_spot_client
     bnb_symbol.update(get_all_binance_symbol())
-    b_client = UMFutures(key = os.environ['BNB_KEY'], secret=os.environ['BNB_SECRET'])
+    bnb_um_client = UMFutures(key = os.environ['BNB_KEY'], secret=os.environ['BNB_SECRET'])
+    bnb_spot_client = Spot( api_key = os.environ['BNB_KEY'], api_secret=os.environ['BNB_SECRET'])
 
 def get_all_binance_symbol()->list[str]:
     result=  requests.get("https://api.binance.com/api/v3/exchangeInfo").json()
@@ -104,7 +165,7 @@ async def bnb_spot_quote(queries:list[str],base:str) -> dict[str, tuple[float]]:
 async def get_crypto_wishlist(update:Update,context)->None:
     # Hard encoded wishlist now
     logger.debug("ENTERED get_crypto_wishlist")
-    wishlist = ['BTC','ETH','SOL','NEAR','BNB']
+    wishlist = ['BTC','ETH','SOL','NEAR','BNB','WIF']
     baseSymbol = "USDT"
     result = await bnb_spot_quote(wishlist,baseSymbol)
     replied = ""
@@ -113,34 +174,27 @@ async def get_crypto_wishlist(update:Update,context)->None:
         replied += f"{percent_mark}{symbol.replace(baseSymbol,'')}: *`{price:.1f}`*U, *`{percent:+.1f}`*%\n" 
     logger.debug(replied)
     await update.message.reply_markdown_v2(replied)
-    
-async def WIF(update:Update,context)->None:
-    r= await asyncio.to_thread(requests.get, f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol=WIFUSDT")
-    binance= r.json()
-    b_price, last_rate, next_rate = float(binance["markPrice"]), float(binance['lastFundingRate']), float(binance['nextFundingTime'])
-    
-    r= await asyncio.to_thread(requests.get, f"https://price.jup.ag/v4/price?ids=EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm&vsToken=USDT")
-    j_price= r.json()['data']['EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm']['price']
-    rate_diff = next_rate - last_rate
-    price_diff = (j_price - b_price ) / b_price
-    diff_mark= '🟢' if price_diff> 0 else "🔴"
-    holdings = 806
-    replied = (f"Binance : {b_price:.4f}\n"
-               f"Jupiter :  {j_price:.4f}\n"
-               f"{diff_mark}PriceDiff: {100*price_diff:+.2f}%, Funding:{100*last_rate:.4f}%\n"
-               f"⚡${holdings*b_price*last_rate:.3f}⚡"
-            #    f"{last_rate:.2f}  "#🔜{next_rate:.2f} ,{rate_mark}{rate_diff:+.2f}  "
-    )
-    await update.message.reply_text(replied)
-async def call_online(update:Update,context)->None:
-    logger.debug("+"*20)
-    if update.effective_chat.type != ChatType.SUPERGROUP :
-        update.message.reply_text("Please add bot into group and elevate it as admin.")
-    else :
-        print(update.chat_member)
+
+#Deprecated    
+# async def call_online(update:Update,context)->None:
+#     logger.debug("+"*20)
+#     if update.effective_chat.type != ChatType.SUPERGROUP :
+#         update.message.reply_text("Please add bot into group and elevate it as admin.")
+#     else :
+#         print(update.chat_member)
         
-    logger.debug("+"*20)
-    pass
+#     logger.debug("+"*20)
+#     pass
+async def start(update: Update, context ) -> int:
+    reply_keyboard = [["/Price"], ["/Position"], ['/Margin']]
+
+    await update.message.reply_text(
+        "Hi, this is a personal bot built by @www10177", 
+        reply_markup=ReplyKeyboardMarkup(
+            reply_keyboard, one_time_keyboard=False, input_field_placeholder="Select Command..", is_persistent=True
+        ),
+    )
+    return 0
     
     
     
@@ -154,7 +208,9 @@ async def main():
     # logger.debug(env)
     app = Application.builder().token(env['TOKEN']).build()
     app.add_handler(CommandHandler("price",get_crypto_wishlist))
-    app.add_handler(CommandHandler("WIF",WIF))
+    # app.add_handler(CommandHandler("WIF",WIF))
+    app.add_handler(CommandHandler("start",start))
+    app.add_handler(CommandHandler("margin",margin))
     # app.add_handler(CommandHandler("up",call_online))
     app.add_handler(CommandHandler("position",check_binance_USDM_position))
     #app.add_handler(CommandHandler("crypto",crypto_exchange))
