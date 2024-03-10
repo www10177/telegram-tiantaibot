@@ -83,7 +83,7 @@ async def check_binance_USDM_position(update:Update, context):
     if update.message.from_user.username == 'www10177':
         holdings = [pos for pos in bnb_um_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
         startTime= 1000*(int(time.time()) - 3600*24)#yesterday in milli epoch time
-        income = bnb_um_client.get_income_history(startTime=startTime,limit=300)
+        income = bnb_um_client.get_income_history(startTime=startTime,limit=300,incomeType='FUNDING_FEE')
         for pos in holdings:
             symbol = pos['symbol']
             value = float(pos['unRealizedProfit'])
@@ -97,7 +97,7 @@ async def check_binance_USDM_position(update:Update, context):
             replied  += f"{rate_mark}Fund:{100*fundRate:.4f}% "+f"⚡${abs(float(pos['positionAmt']))*float(pos['markPrice'])*fundRate:.3f}⚡\n"
             price_sum = 0
             for row in income :
-                if row['symbol'] == symbol and row['incomeType'][:4] != 'COMM':
+                if row['symbol'] == symbol :
                     replied += time.strftime("%H:%M", time.localtime(row['time']/1000)) # ms to second
                     replied += f"[{row['incomeType'][:4]}]: {row['income']} {row['asset']}\n"
                     price_sum += float(row['income'])
