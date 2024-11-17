@@ -28,8 +28,10 @@ import urllib
 currencies = []
 crypto={}
 bnb_symbol = set()
-bnb_um_client = None 
-bnb_spot_client = None 
+bnb_um_client_www = None 
+bnb_spot_client_www = None 
+bnb_um_client_eason = None 
+bnb_spot_client_eason = None 
 logger = logging.getLogger(__name__)
 
 class WebhookUpdate:
@@ -80,7 +82,13 @@ def load_setting():
 
 async def check_binance_USDM_position(update:Update, context):
     replied = ""
-    if update.message.from_user.username == 'www10177':
+    username = update.message.from_user.username  
+    if username == 'www10177'  or username == 'eathon1214':
+        if update.message.from_user.username == 'www10177':
+            bnb_um_client = bnb_um_client_www
+        else :
+            bnb_um_client = bnb_um_client_eason
+            
         holdings = [pos for pos in bnb_um_client.get_position_risk() if float(pos['positionAmt']) != 0.0]
         startTime= 1000*(int(time.time()) - 3600*24)#yesterday in milli epoch time
         income = bnb_um_client.get_income_history(startTime=startTime,limit=300,incomeType='FUNDING_FEE')
@@ -90,8 +98,8 @@ async def check_binance_USDM_position(update:Update, context):
             r= await asyncio.to_thread(requests.get, f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={symbol}")
             fundRate = float(r.json()['lastFundingRate'])
             value_mark= '🟢' if value> 0 else "🔴"
-            to_str = lambda x : f"{float(x):.2f}"
-            replied  += f"{value_mark}[{pos['symbol']}@{to_str(pos['positionAmt'])}]: ${value:.2f}\n"
+            to_str = lambda x : f"{float(x):.3f}"
+            replied  += f"{value_mark}[{pos['symbol']}@{to_str(pos['positionAmt'])}]: ${value:.3f}\n"
             replied += f"{value_mark}Now:{to_str(pos['markPrice'])}, Liq:{to_str(pos['liquidationPrice'])}\n"
             rate_mark= '🟢' if fundRate> 0 else "🔴"
             replied  += f"{rate_mark}Fund:{100*fundRate:.4f}% "+f"⚡${abs(float(pos['positionAmt']))*float(pos['markPrice'])*fundRate:.3f}⚡\n"
@@ -102,7 +110,7 @@ async def check_binance_USDM_position(update:Update, context):
                     replied += f"[{row['incomeType'][:4]}]: {row['income']} {row['asset']}\n"
                     price_sum += float(row['income'])
             replied += f'Summation : {price_sum:.2f}\n'
-                
+            
             replied += '-----\n' 
     else :
         replied += "Private Command.\nPlease Contact @www10177 for more info. "
@@ -111,26 +119,37 @@ async def check_binance_USDM_position(update:Update, context):
     
 async def margin(update:Update, context):
     replied = ""
-    if update.message.from_user.username == 'www10177':
-            data = bnb_spot_client.margin_account()
-            replied = f"Level:{float(data['marginLevel']):.2f}\n"
-            assets = [item['asset'] for item in data['userAssets'] if item['borrowed'] != '0' ]
-            rates = bnb_spot_client.get_a_future_hourly_interest_rate(assets=','.join(assets),isIsolated=False)
-            rates ={item['asset'] : float(item['nextHourlyInterestRate']) for item in rates}
-            for item in data['userAssets']:
-                if item['borrowed'] != '0' :
-                    replied += f"{item['asset']} : {item['borrowed']}/ 4hour rate: {100*4*rates[item['asset']]:.4f}% \n" 
-            print(replied)
+    username = update.message.from_user.username  
+    print(username)
+    print(username == 'www10177')
+    if username == 'www10177'  or username == 'eathon1214':
+        if update.message.from_user.username == 'www10177':
+            bnb_spot_client = bnb_spot_client_www
+        else :
+            bnb_spot_client = bnb_spot_client_eason
+        data = bnb_spot_client.margin_account()
+        replied = f"Level:{float(data['marginLevel']):.2f}\n"
+        assets = [item['asset'] for item in data['userAssets'] if item['borrowed'] != '0' ]
+        rates = bnb_spot_client.get_a_future_hourly_interest_rate(assets=','.join(assets),isIsolated=False)
+        rates ={item['asset'] : float(item['nextHourlyInterestRate']) for item in rates}
+        for item in data['userAssets']:
+            if item['borrowed'] != '0' :
+                replied += f"{item['asset']} : {item['borrowed']}/ 4hour rate: {100*4*rates[item['asset']]:.4f}% \n" 
+        print(replied)
     else :
         replied += "Private Command.\nPlease Contact @www10177 for more info. "
     logger.debug(replied)
     await update.message.reply_text(replied)
 
 def init() : 
-    global bnb_symbol,bnb_um_client,bnb_spot_client
+    load_dotenv()
+    global bnb_symbol,bnb_um_client_www,bnb_spot_client_www
+    global bnb_um_client_eason,bnb_spot_client_eason
     bnb_symbol.update(get_all_binance_symbol())
-    bnb_um_client = UMFutures(key = os.environ['BNB_KEY'], secret=os.environ['BNB_SECRET'])
-    bnb_spot_client = Spot( api_key = os.environ['BNB_KEY'], api_secret=os.environ['BNB_SECRET'])
+    bnb_um_client_www = UMFutures(key = os.environ['BNB_KEY_WWW'], secret=os.environ['BNB_SECRET_WWW'])
+    bnb_spot_client_www = Spot( api_key = os.environ['BNB_KEY_WWW'], api_secret=os.environ['BNB_SECRET_WWW'])
+    bnb_um_client_eason = UMFutures(key = os.environ['BNB_KEY_EASON'], secret=os.environ['BNB_SECRET_EASON'])
+    bnb_spot_client_eason = Spot( api_key = os.environ['BNB_KEY_EASON'], api_secret=os.environ['BNB_SECRET_EASON'])
 
 def get_all_binance_symbol()->list[str]:
     result=  requests.get("https://api.binance.com/api/v3/exchangeInfo").json()
@@ -152,7 +171,7 @@ async def bnb_spot_quote(queries:list[str],base:str) -> dict[str, tuple[float]]:
 async def get_crypto_wishlist(update:Update,context)->None:
     # Hard encoded wishlist now
     logger.debug("ENTERED get_crypto_wishlist")
-    wishlist = ['BTC','ETH','SOL','NEAR','BNB','WIF']
+    wishlist = ['BTC','ETH','SOL','NEAR','BNB','WIF','W']
     baseSymbol = "USDT"
     result = await bnb_spot_quote(wishlist,baseSymbol)
     replied = ""
@@ -189,7 +208,6 @@ async def start(update: Update, context ) -> int:
 
 
 async def main():
-    load_dotenv()
 
     env = os.environ
     # logger.debug(env)
@@ -242,9 +260,10 @@ async def main():
         """For the health endpoint, reply with a simple plain text message."""
         return PlainTextResponse(content="The bot is still running fine :)")
 
-    route = '/'+''.join(os.environ['URL'].strip('https://').split('/')[1:])
+    route = '/'
     starlette_app = Starlette( routes=[
-            Route(route, handler, methods=["POST"]),
+            Route(f"{route}", handler, methods=["POST"]),
+            Route(f"{route}/", handler, methods=["POST"]),
             Route(f"{route}/healthcheck", health, methods=["GET"]),
             Route(f"{route}/submitpayload", custom_updates, methods=["POST", "GET"]),
         ]
